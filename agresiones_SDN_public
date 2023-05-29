@@ -1,0 +1,492 @@
+const width = 800;
+const height = 550;
+
+const initScale = 1500
+
+//Set data parameters
+
+const values = ['Cantidad','Fal_Autoridad','Her_Autoridad','Bajas_Autoridad','Fal_Civiles','Her_Civiles', 'Bajas_Civiles','Detenidos']
+
+const geocodes = ['CVE','CVM','CP']
+
+var yearRange, years, statesList
+
+var munDomain = 100
+var estDomain = [0, 0]
+var currentDomain = 1
+var toolTipState = ["México", "Nacional"]
+
+// Create the initial projection for states
+const mexProjection = d3.geoAlbers()
+  .rotate([102, 0])
+  .center([0, 24.5])
+  .parallels([29.5, 45.5])
+  .scale(initScale)
+  .translate([width / 2, height / 2]);
+
+// Create a path generator for the state projection
+const statePath = d3.geoPath()
+  .projection(mexProjection);
+
+// Create the SVG container
+const svg = d3.select('#map')
+  .append('svg')
+  .style('width', "100%")
+  .style('max-height', '65vh')
+  .style('min-height', '50vh')
+  .attr('id', 'mapSVG')
+  .attr('viewBox', `0 0 ${width} ${height}`)
+  .attr('preserveAspectRatio', 'xMidYMid meet');
+
+const background = svg.append("rect").attr('width', '100%').attr('height', '100%')
+    .attr('fill-opacity', '0')
+    .attr('name', 'México')
+
+const munG = svg.append("g").attr("id", "municipios")
+
+const staG = svg.append("g").attr("id", "states")
+
+
+//color scale for legend and map
+
+function getScale(input){
+    return d3.scaleSequential(d3.interpolateGnBu)
+  .domain(input)
+  }
+
+// add the legend
+
+var legendSVG = d3.select("#map").append('div').attr('id', 'legendContainer')
+  .append("svg")
+  .attr("id", "legend")
+  .style("max-width", "340px")
+  .style("width", "100%")
+  .attr("viewBox", "0 0 340 50")
+  .attr('preserveAspectRatio', 'xMidYMid meet')
+
+  var bars = legendSVG.append("g")
+  .attr("id", "bars")
+  .attr("transform", "translate(20, 0)");
+    
+  var legendColor = getScale([0, 99])
+
+  // draw legend rectangles
+      bars.selectAll("rect")
+  .data(d3.range(100))
+  .enter()
+  .append("rect")
+  .attr("x", function(d, i) { return i * 3; })
+  .attr("y", 0)
+  .attr("width", 3)
+  .attr("height", 20)
+  .style("fill", function(d) { return legendColor(d); });
+
+  //add an axis to the legend
+
+  var xScale = d3.scaleLinear()
+  .domain([1, estDomain[0]])
+  .range([0, 300]);
+
+// Append the x-axis to the legend SVG
+  var legendAxis = d3.axisBottom(xScale)
+    .ticks(5) // Adjust the number of ticks as desired
+    .tickSize(5) // Adjust the tick size as desired
+    .tickPadding(8); // Adjust the tick padding as desired
+
+
+  legendSVG.append("g")
+    .attr("id", "legendAxis")
+    .attr("transform", "translate(20, 20)") // Adjust the y-position of the axis as desired
+    .call(legendAxis);
+
+function updateLegend(input) {
+  // Update the x-axis scale domain
+  xScale.domain([0, input[1]]);
+  // Redraw the x-axis
+  legendSVG.select("#legendAxis")
+    .transition()
+    .duration(1000) // Adjust the transition duration as desired
+    .call(legendAxis);
+}
+
+//add tooltip
+
+const toolTip = d3.select('#legendContainer').append('div')
+  .attr('class', 'tooltip')
+  .text('Cargando datos')
+
+
+// load data
+
+const files = [
+d3.json('entidades.json',),
+d3.json('municipios.json'),
+d3.csv('SEDENA-AGG-2007-2022.csv', function(d){
+
+  const parser = d3.timeParse("%d/%m/%Y")
+  
+  function getYearFromDate(date) {
+  const yearFormat = d3.timeFormat('%Y');
+  return +yearFormat(date);
+}
+
+  d.Bajas_Autoridad = +d.Fal_Autoridad + +d.Her_Autoridad
+  d.Fal_Civiles = +d.Fal_PD + +d.Fal_Vic
+  d.Her_Civiles = +d.Her_PD + +d.Her_Vic
+  d.Bajas_Civiles = +d.Fal_Civiles + +d.Her_Civiles
+
+  values.forEach(v => d[v] = +d[v])
+
+  d.CVE !== '' ? d.CVE = d.CVE.padStart(2, '0') : ''
+  d.CVM !== '' ? d.CVM = d.CVM.padStart(3, '0') : ''
+  if (d.CVM !=='') {d.CP = d.CVE + d.CVM} else{d.CP = ''}
+  d.year = getYearFromDate(parser(d.Fecha))
+
+
+   return d
+}).then(function(data) {
+
+// Build Tooltip
+
+toolTip.html('<p><span id="tt4"></span></p><p><b><span id="tt1"></span></b> <span id="tt2"></span> <span id="tt3"></span></p>')
+
+// Push all unique 'year' values to the 'years' array in ascending order
+const uniqueYears = Array.from(new Set(data.map(d => d.year)));
+yearRange = `${d3.min(uniqueYears)} - ${d3.max(uniqueYears)}`
+years = [yearRange]
+years.push(...uniqueYears.filter(year => !years.includes(year)));
+
+  function aggregator(data, field) {
+    const groupedData = d3.group(data, d => d.year);
+
+const aggregatedData = Array.from(groupedData, ([year, yearData]) => {
+  const stateArray = Array.from(d3.group(yearData, d => d[field]), ([state, stateData]) => {
+    const stateObj = { [field]: state };
+    values.forEach(valueField => {
+      stateObj[valueField] = d3.sum(stateData, d => d[valueField]);
+    });
+    stateObj.Cantidad = stateData.length; // Add 'cantidad' field with the count of entries
+    return stateObj;
+  });
+
+  return { year: year, states: stateArray };
+});
+
+const allYearsTotal = {year: yearRange, states: [] };
+const uniqueStates = Array.from(new Set(aggregatedData.flatMap(d => d.states.map(s => s[field]))));
+uniqueStates.forEach(state => {
+  const stateTotal = { [field]: state };
+  values.forEach(valueField => {
+    stateTotal[valueField] = d3.sum(aggregatedData, d => {
+      const stateData = d.states.find(s => s[field] === state);
+      return stateData ? stateData[valueField] : 0;
+    });
+  });
+  stateTotal.cantidad = aggregatedData.reduce((count, d) => {
+    const stateData = d.states.find(s => s[field] === state);
+    return count + (stateData ? 1 : 0);
+  }, 0); // Calculate the count of entries across all years
+  allYearsTotal.states.push(stateTotal);
+});
+allYearsTotal.Cantidad = aggregatedData.length; // Calculate the count of entries across all years
+aggregatedData.push(allYearsTotal);
+
+return aggregatedData;
+}
+
+const munData = aggregator(data, 'CP')
+const estData = aggregator(data, 'CVE')
+
+return [estData, munData]
+
+})
+]
+
+Promise.all(files).then(input => {
+  drawStates(input[0])
+  drawMunicipios(input[1])
+  goLive(input[2][0], input[2][1])
+})
+
+function drawStates (topojsonData){
+  // Convert TopoJSON to GeoJSON features
+
+  const states = topojson.feature(topojsonData, topojsonData.objects.entidades);
+
+statesList = states.features.map(d => {
+  return {name: d.properties.NOMGEO,
+          CVE: d.properties.CVE_ENT
+  }
+})
+
+staG.selectAll('.state')
+    .data(states.features)
+    .enter()
+    .append('path')
+    .attr('class', 'state')
+    .attr('name', d => d.properties.NOMGEO)
+    .attr("id", d =>  'est' + d.properties.CVEGEO.toString())
+    .attr('d', statePath)
+};
+
+function drawMunicipios (topojsonData) {
+  // Convert TopoJSON to GeoJSON features
+
+const municipios = topojson.feature(topojsonData, topojsonData.objects.municipios);
+
+  munG.selectAll('.municipio')
+    .data(municipios.features)
+    .enter()
+    .append('path')
+    .attr('class', 'municipio')
+    .attr('name', d => d.properties.NOMGEO)
+    .attr('estado', function(d){
+      var name = d.properties.CVEGEO.substring(0,2)
+      var lookup = statesList.find(item => item.CVE == name).name
+      return lookup
+    })
+    .attr("id", d =>  'mun' + d.properties.CVEGEO.toString())
+    .attr('d', statePath)
+    .style("display", "none")
+
+};
+
+var zoom = d3.zoom()
+      .scaleExtent([1, 10])
+      .on('zoom', function(event) {
+         
+        var zoomLevel = +event.transform.k
+        
+        const zoomTrigger = 2 
+
+        munG.selectAll('.municipio')
+           .attr('transform', event.transform)
+           .style('display', zoomLevel >= zoomTrigger ? '' : 'none');
+           
+        staG.selectAll('.state')
+           .attr('transform', event.transform)
+           .style('display', zoomLevel < zoomTrigger ? '' : 'none');
+
+        var checkDomain
+
+        zoomLevel < zoomTrigger ? checkDomain = 1 : checkDomain = 0
+
+        if (checkDomain != currentDomain){
+          currentDomain = checkDomain
+          currentDomain == 1 ? updateLegend(estDomain) : updateLegend(munDomain)
+        }
+
+});
+
+svg.call(zoom);
+
+function goLive(estData, munData){
+
+  var valueSelected = 'Cantidad'
+
+  var yearSelected = yearRange
+
+
+//get data max bounds
+
+function getMax (input, value){
+  var yearlyArray = []
+  input.forEach(d => {
+    if (d.year !== yearRange){
+      d.states.forEach(e => {
+        yearlyArray.push(e[value])
+      })
+    }
+  })
+
+  var totalArray = []
+
+  input.find(item => item.year === yearRange).states.forEach(e => {
+        totalArray.push(e[value])
+      })
+
+      return [d3.max(yearlyArray), d3.max(totalArray)]
+
+}
+
+const estMaxes = values.map(d => {
+  return {value: d,
+          yearlyMax: getMax(estData, d)[0],
+          totalMax: getMax(estData,d)[1],
+        }
+})
+
+const munMaxes = values.map(d => {
+  return {value: d,
+          yearlyMax: getMax(munData, d)[0],
+          totalMax: getMax(munData,d)[1],
+        }
+})
+
+//add value dropdown
+
+const valueDropdown = d3.select('#filters').append('div').attr('id', 'valueSelectContainer')
+
+
+var names = ['Incidentes', 'Fallecidxs SEDENA', 'Heridxs SEDENA', 'Bajas SEDENA', 'Fallecidxs civiles', 'Heridxs civiles', 'Bajas civiles', 'Detenidxs']
+
+var dropdownData = values.map((d, i) => {
+ return [d, names[i]]
+})
+
+const createDropdown = dropdownData.forEach(d => {
+  d3.select('#valueSelectContainer').append('div')
+    .attr('class', 'valueSelect')
+    .text(d[1])
+    .attr('value', d[0])
+    .on('click', function(){
+      valueSelected = d3.select(this).attr('value')
+      shadeMap()
+      d3.selectAll('.valueSelect').classed('selected', false)
+      d3.select(this).classed('selected', true)
+    })
+
+    d3.select('.valueSelect').classed('selected', true)
+
+})
+
+//add year slider
+
+const yearSlider = d3.select('#filters').append('div').attr('id', 'yearSliderContainer')//.style('max-width', '600px');
+
+const addSliderLabel = yearSlider.append('label')
+  .attr('id', 'yearSliderLabel')
+  .text(`${yearSelected}`)
+// Create the dropdown selector
+const addSlider = yearSlider.append('input')
+  .attr('type', 'range')
+  .attr('value', 0)
+  .attr('min', 0)
+  .attr('max', years.length - 1)
+  .attr('id', 'yearSlider')
+  .attr('list', 'yearValues')
+  .on('change', function(){
+    yearSelected = years[d3.select(this).property('value')]
+    yearSelected !== yearRange ? yearSelected = +yearSelected : '' // to solve issue of year names stored as integers
+    d3.select('#yearSliderLabel').text(`${yearSelected}`)
+    shadeMap()
+  }); // Attach an event listener for change event
+
+const sliderScale = yearSlider.append('datalist').attr('id', 'yearValues')
+
+var yearValuesCount = 0
+
+years.forEach(d => {
+  d3.select("#yearValues").append('option')
+    .attr('value', yearValuesCount)
+    .attr('label', d)  
+    yearValuesCount = yearValuesCount + 1
+})
+
+// build shader
+
+function shadeMap(){
+
+  const estItem = estData.find(item => item.year === yearSelected).states;
+
+  const munItem = munData.find(item => item.year === yearSelected).states;
+
+  munDomain = getDomain(munMaxes)
+  estDomain = getDomain(estMaxes)
+
+  var estScale = getScale(estDomain)
+
+  var munScale = getScale(munDomain);
+
+function getDomain(maxes){
+    var top = yearSelected === yearRange ? maxes.find(item => item.value === valueSelected).totalMax : maxes.find(item => item.value === valueSelected).yearlyMax 
+    return [1, top]
+  }
+
+d3.selectAll('.state').style('fill', 'lightgray').classed('active', false)
+estItem.forEach(d => {
+  d3.select('#states').select(`#est${d.CVE}`)
+  .classed('active', true)
+  .style('fill', estScale(d[valueSelected]))
+})
+
+d3.selectAll('.municipio').style('fill', 'lightgray').classed('active', false)
+munItem.forEach(d => {
+  d3.select('#municipios').select(`#mun${d.CP}`)
+  .classed('active', true)
+  .style('fill', munScale(d[valueSelected]))
+})
+
+//update the legend
+currentDomain == 1 ? updateLegend(estDomain) : updateLegend(munDomain)
+
+//add tooltip
+
+var countryData = {}
+
+values.map(d => {
+  countryData[d] = d3.sum(estItem, e => e[d])
+})
+
+d3.selectAll('.state').filter('.active')
+  .on('click', function(){
+    var id = d3.select(this).attr('id').substring(3)
+    var name = d3.select(this).attr('name')
+    var lookup = estItem.find(item => item.CVE == id)
+    toolTip(name, lookup)
+    toolTipState = [name, "Estatal", id]
+  })
+
+  d3.selectAll('.municipio').filter('.active')
+  .on('click', function(){
+    var id = d3.select(this).attr('id').substring(3)
+    var name = d3.select(this).attr('name') + ', ' + d3.select(this).attr('estado')
+    var lookup = munItem.find(item => item.CP == id)
+    toolTip(name, lookup)
+    toolTipState = [name, "Municipal", id]
+  })
+
+background.on('click', function(){
+  var name = d3.select(this).attr('name')
+  toolTip(name, countryData)
+  toolTipState = ["México", "Nacional"]
+})
+
+function toolTip(name, input){
+  function add (id, content){
+    d3.select(id).text(content)
+  }
+
+  var valueName = names[values.indexOf(valueSelected)]
+
+  add('#tt1', input[valueSelected])
+  add('#tt2', valueName)
+  add('#tt3', yearSelected)
+  add('#tt4', name)
+  //d3.select('#tt1').text(`${input[valueSelected]}`)
+  //d3.select('#')
+}
+
+if (toolTipState[1] == 'Nacional'){
+    toolTip(toolTipState[0], countryData)
+} else if (toolTipState[1] == 'Estatal'){
+    var input = estItem.find(item => item.CVE == toolTipState[2])
+    if (input !== undefined) {toolTip(toolTipState[0], input)}
+    else {
+      toolTipState = ["México", "Nacional"]
+      toolTip(toolTipState[0], countryData)
+    }
+} else if (toolTipState[1] == 'Municipal'){
+  var input = munItem.find(item => item.CP == toolTipState[2])
+    if (input !== undefined) {toolTip(toolTipState[0], input)}
+    else {
+      toolTipState = ["México", "Nacional"]
+      toolTip(toolTipState[0], countryData)
+    }
+} else {console.log('error')}
+
+}
+
+shadeMap()
+
+}
