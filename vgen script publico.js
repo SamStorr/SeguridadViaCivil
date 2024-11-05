@@ -5,7 +5,7 @@ var datasets = [
         parametros: [
                     [["Agresiones","tot"],["Militares fallecidos","autF"],["Militares heridos","autH"],["Civiles fallecidos","civF"],["Civiles heridos","civH"],["Detenidos","civD"],["Letalidad","let"],]
                 ],
-        dataEnt: d3.csv('https://seguridadviacivil.ibero.mx/wp-content/uploads/2024/11/agresiones_ent_2007-2023.csv', function(d){
+        dataEnt: d3.csv('https://raw.githubusercontent.com/SamStorr/SeguridadViaCivil/refs/heads/main/agresiones_ent_2007-2023.csv', function(d){
             return {
                 anio: +d.anio,
                 cve: d.ent,
@@ -19,7 +19,7 @@ var datasets = [
                 let: d.let == "#" ? Infinity: +d.let,
             }
         }),
-        dataMun: d3.csv('https://seguridadviacivil.ibero.mx/wp-content/uploads/2024/11/agresiones_mun_2007-2023.csv', function(d){
+        dataMun: d3.csv('https://raw.githubusercontent.com/SamStorr/SeguridadViaCivil/refs/heads/main/agresiones_mun_2007-2023.csv', function(d){
             return {
                 anio: +d.anio,
                 ent: d.ent,
@@ -37,7 +37,7 @@ var datasets = [
     },
     {   nombre: "Homicidios",
         autoridades: false,
-        dataEnt: d3.csv('https://seguridadviacivil.ibero.mx/wp-content/uploads/2024/11/homicidios_ent_2015-2022.csv', function(d){return {
+        dataEnt: d3.csv('https://raw.githubusercontent.com/SamStorr/SeguridadViaCivil/refs/heads/main/homicidios_ent_2015-2022.csv', function(d){return {
             anio: +d.anio,
             cve: d.ent,
             abs: {
@@ -65,7 +65,7 @@ var datasets = [
                     }
                 }
         }}),
-        dataMun:     d3.csv('https://seguridadviacivil.ibero.mx/wp-content/uploads/2024/11/homicidios_mun_2015-2022.csv', function(d){return {
+        dataMun:     d3.csv('https://raw.githubusercontent.com/SamStorr/SeguridadViaCivil/refs/heads/main/homicidios_mun_2015-2022.csv', function(d){return {
             anio: +d.anio,
             ent: d.geo.substring(0, 2),
             cve: d.geo,
@@ -103,7 +103,7 @@ var datasets = [
     },
 ]
 
-const geoFiles =  [d3.json('https://seguridadviacivil.ibero.mx/wp-content/uploads/2024/11/entidades-1.json'), d3.json('https://seguridadviacivil.ibero.mx/wp-content/uploads/2024/11/00mun-11.json'), datasets[0].dataEnt, datasets[0].dataMun]
+const geoFiles =  [d3.json('https://raw.githubusercontent.com/SamStorr/SeguridadViaCivil/refs/heads/main/entidades.json'), d3.json('https://raw.githubusercontent.com/SamStorr/SeguridadViaCivil/refs/heads/main/00mun-11.json'), datasets[0].dataEnt, datasets[0].dataMun]
 
 //Set initial parameters
 var dataSelected = 0
